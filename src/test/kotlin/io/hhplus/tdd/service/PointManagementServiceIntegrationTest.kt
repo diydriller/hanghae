@@ -7,8 +7,10 @@ import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
+import java.util.concurrent.CompletableFuture
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicInteger
 
 @SpringBootTest
 class PointManagementServiceIntegrationTest {
@@ -59,6 +61,33 @@ class PointManagementServiceIntegrationTest {
         val finalPoint = pointManagementService.getUserPoint(userId)
         assertEquals(1000, finalPoint.point)
     }
+
+    @Test
+    @DisplayName("synchronization integration test throw exception for using user point exceeding balance")
+    fun useUserPointSynchronizeThrowExceptionTest() {
+        val userId = 4L
+        pointManagementService.chargeUserPoint(ChargePointDto(userId, 2000L))
+
+        val taskCount = 12
+        val successCount = AtomicInteger(0)
+        val failureCount = AtomicInteger(0)
+
+        val futureArray = Array(taskCount) {
+            CompletableFuture.runAsync {
+                try {
+                    pointManagementService.useUserPoint(UsePointDto(userId, 200L))
+                    successCount.incrementAndGet()
+                } catch (e: Exception) {
+                    failureCount.incrementAndGet()
+                }
+            }
+        }
+        CompletableFuture.allOf(*futureArray).join()
+
+        assertEquals(successCount.get(), 10)
+        assertEquals(failureCount.get(), 2)
+    }
+
 
     private fun runConcurrentTest(
         threadCount: Int, taskCount: Int, task: () -> Unit
